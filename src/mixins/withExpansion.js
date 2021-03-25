@@ -13,21 +13,11 @@ export function data() {
     'children'
 
   this.childrenColumnName = childrenColumnName
-  this._initDataSourceState(this.dataSource)
 
   if (isObject(this.expandable)) {
-    const entireDataSource = this._genDataByExpandable()
-    const expandedRowKeys =
-      isObject(this.expandable) && isValidArray(this.expandable.expandedRowKeys)
-        ? this.expandable.expandedRowKeys
-        : isValidArray(this.expandedRowKeys)
-        ? this.expandedRowKeys
-        : this._genExpandedKeys(entireDataSource)
-
     return {
-      // The entire data source after expand per item by depth in tree-like data
-      entireDataSource,
-      expandedRowKeys
+      entireDataSource: [],
+      expandedRowKeys: []
     }
   }
 
@@ -36,26 +26,21 @@ export function data() {
 
 // only watch those properties form `expandable` prop
 export const watch = {
-  dataSource(data) {
-    if (!isValidArray(data)) {
-      return this._clearExpansionSideEffects()
-    }
+  dataSource: {
+    immediate: true,
+    handler(data) {
+      if (!isValidArray(data)) {
+        return this._clearExpansionSideEffects()
+      }
 
-    this._initDataSourceState(data)
+      this._initDataSourceState(data)
 
-    if (isObject(this.expandable)) {
-      this.entireDataSource = this._genDataByExpandable()
+      if (isObject(this.expandable)) {
+        this.entireDataSource = this._updateDataByExpandable()
+        this.expandedRowKeys = this._updateExpandedKeys()
 
-      if (!isValidArray(this.expandedRowKeys)) {
-        const depth = this.expandable.expandDepth
-
-        if (depth) {
-          this.expandedRowKeys = this._genExpandedKeysWithDepth(
-            this.entireDataSource,
-            depth
-          )
-        } else {
-          this.expandedRowKeys = this._genExpandedKeys(this.entireDataSource)
+        if (!this.__initializedEntireData) {
+          this.__initializedEntireData = true
         }
       }
     }
@@ -283,7 +268,7 @@ export const methods = {
   _initDataSourceState(data = []) {
     if (!isValidArray(data)) {
       this.flattenedData = null
-      this.flattenedPresets = null
+      this.flattenedPathMap = null
     } else {
       this.flattenedData = flattenData(data, this.childrenColumnName)
       this.flattenedData.forEach((item, index) => {
@@ -301,7 +286,11 @@ export const methods = {
     }
   },
 
-  _genDataByExpandable() {
+  _updateDataByExpandable() {
+    if (isValidArray(this.expandedRowKeys) || this.__initializedEntireData) {
+      return this._genDataByKeys(this.expandedRowKeys)
+    }
+
     const {
       expandDepth = null,
       expandedRowKeys = [],
@@ -309,10 +298,6 @@ export const methods = {
     } = this.expandable || {}
 
     let entireDataSource = this.dataSource
-
-    if (isValidArray(this.expandedRowKeys)) {
-      return this._genDataByKeys(this.expandedRowKeys)
-    }
 
     if (isValidArray(expandedRowKeys)) {
       entireDataSource = this._genDataByKeys(expandedRowKeys)
@@ -323,6 +308,33 @@ export const methods = {
     }
 
     return entireDataSource
+  },
+
+  _updateExpandedKeys() {
+    if (isValidArray(this.expandedRowKeys) || this.__initializedEntireData) {
+      return this.expandedRowKeys
+    }
+
+    let nextExpandedRowKeys = this.expandedRowKeys
+
+    const {
+      expandDepth = null,
+      expandedRowKeys = [],
+      defaultExpandAllRows = null
+    } = this.expandable || {}
+
+    if (isValidArray(expandedRowKeys)) {
+      nextExpandedRowKeys = expandedRowKeys
+    } else if (typeof defaultExpandAllRows === 'boolean') {
+      nextExpandedRowKeys = this._genExpandedKeys(this.entireDataSource)
+    } else if (expandDepth && isNumber(expandDepth)) {
+      nextExpandedRowKeys = this._genExpandedKeysWithDepth(
+        this.entireDataSource,
+        expandDepth
+      )
+    }
+
+    return nextExpandedRowKeys
   },
 
   /**
@@ -402,7 +414,7 @@ export const methods = {
 
   _clearExpansionSideEffects() {
     this.entireDataSource = this.flattenedData = this.expandedRowKeys = []
-    this.flattenedPathMap = null
+    this.flattenedPathMap = this.__initializedEntireData = null
   }
 }
 
